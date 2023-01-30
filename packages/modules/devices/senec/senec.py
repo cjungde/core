@@ -9,7 +9,7 @@ Tested with: SENEC.Home V3 hybrid duo
 Kudos:
 * SYSTEM_STATE_NAME taken from https://github.com/mchwalisz/pysenec
 """
-from numpy import empty
+#from numpy import empty
 import requests
 import struct
 import logging
@@ -132,6 +132,13 @@ BASIC_REQUEST = {
         'DESIGN_CAPACITY': '',              # Battery design capacity (Wh)
         'MAX_CHARGE_POWER_DC': '',          # Battery max charging power (W)
         'MAX_DISCHARGE_POWER_DC': ''        # Battery max discharging power (W)
+    },
+    'PM1OBJ1': {
+        'FREQ': '',                         # Frequency (Hz) Values 49.00 >> 50.00
+        'U_AC': '',                         # Spannung (V) Werte 219.12 >> 223.43
+        'I_AC': '',                          # Strom (A) Werte 0.88 >> 1.67 
+        'P_AC': '',                          # Leistung (W) Werte -2345 >> 3000
+        'P_TOTAL': ''                       # Gesamtleistung (W) Werte -3000  >> 3000
     }
 }
 

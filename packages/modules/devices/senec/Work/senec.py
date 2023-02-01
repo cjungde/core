@@ -100,6 +100,8 @@ BASIC_REQUEST = {
         'CURRENT_STATE': '',                # Current state of the system (int, see SYSTEM_STATE_NAME)
         'LIVE_BAT_CHARGE_MASTER': '',       # Battery charge amount since installation (kWh)
         'LIVE_BAT_DISCHARGE_MASTER': '',    # Battery discharge amount since installation (kWh)
+        'LIVE_BAT_CHARGE':'',               # Gesamtlademenge (Wh) Werte 1692
+        'LIVE_BAT_DISCHARGE':'',            # Gesamtentlademenge (Wh) Werte 1692
         'LIVE_GRID_EXPORT': '',             # Grid export amount since installation (kWh)
         'LIVE_GRID_IMPORT': '',             # Grid import amount since installation (kWh)
         'LIVE_HOUSE_CONS': '',              # House consumption since installation (kWh)

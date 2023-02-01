@@ -5,6 +5,7 @@ import sys
 
 from senec import Senec
 
+
 #read config.json
 with open('config.json') as config_file:
   config = json.load(config_file)
@@ -29,11 +30,11 @@ print("Entladeleistung     : {0}".format(data["FACTORY"]['MAX_DISCHARGE_POWER_DC
 #print("Steuerungs - SN     : {0}".format(data["FACTORY"]['DEVICE_ID']))
 
 print("")
-print("Batterie - Fuellstand        : {0} %".format(round(data["ENERGY"]['GUI_BAT_DATA_FUEL_CHARGE'],2)))
+
 print("Batterie - Laden/Entladen    : {0} W".format(round(data["ENERGY"]['GUI_BAT_DATA_POWER'],2)))
 print("Power - Einspeisung / Bezug  : {0} W".format(round(data["ENERGY"]['GUI_GRID_POW'],2)))
 print("Power - Hausverbrauch        : {0} W".format(round(data["ENERGY"]['GUI_HOUSE_POW'],2)))
-print("Power - PV Leistung          : {0} W".format(round(data["ENERGY"]['GUI_INVERTER_POWER'],2)))
+
 print("")
 print("PV Leistung - String 1       : {0} W".format(round(data["PV1"]['MPP_POWER'][0],2)))
 print("PV Leistung - String 2       : {0} W".format(round(data["PV1"]['MPP_POWER'][1],2)))
@@ -52,3 +53,13 @@ print("Leistung (1)                 : {0} W".format(round(data["PM1OBJ1"]['P_AC'
 print("Leistung (2)                 : {0} W".format(round(data["PM1OBJ1"]['P_AC'][1],2)))
 print("Leistung (3)                 : {0} W".format(round(data["PM1OBJ1"]['P_AC'][2],2)))
 print("Gesamtleistung               : {0} W".format(round(data["PM1OBJ1"]['P_TOTAL'],2)))
+
+print("Batterie - Laden/Entladen    : {0} W".format(round(data["ENERGY"]['GUI_BAT_DATA_POWER'],2)))
+print("Batterie - Fuellstand        : {0} %".format(round(data["ENERGY"]['GUI_BAT_DATA_FUEL_CHARGE'],2)))
+print("Power - PV Leistung          : {0} W".format(round(data["ENERGY"]['GUI_INVERTER_POWER'],2)))
+
+print("Gesamtlademenge              : {0} Wh".format(round(data["STATISTIC"]['LIVE_BAT_CHARGE'],2)))
+print("Gesamtentlademenge           : {0} Wh".format(round(data["STATISTIC"]['LIVE_BAT_DISCHARGE'],2)))
+print("Gesamtimport                 : {0} Wh".format(round(data["STATISTIC"]['LIVE_GRID_IMPORT'],2)))
+print("Gesamteinspeisung            : {0} Wh".format(round(data["STATISTIC"]['LIVE_GRID_EXPORT'],2)))
+print("Gesamt PV Erzeugung (vom WR) : {0} Wh".format(round(data["STATISTIC"]['LIVE_PV_GEN'],2)))

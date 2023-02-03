@@ -5,13 +5,13 @@ from modules.common.component_type import ComponentDescriptor
 from modules.common.fault_state import ComponentInfo
 from modules.common.simcount import SimCounter
 from modules.common.store import get_bat_value_store
-from modules.devices.sample_request_by_device.config import SampleBatSetup
+from modules.devices.senec.config import SenecBatSetup
 
 
-class SampleBat:
-    def __init__(self, device_id: int, component_config: SampleBatSetup) -> None:
+class SenecBat:
+    def __init__(self, device_id: int, component_config: SenecBatSetup) -> None:
         self.__device_id = device_id
-        self.component_config = dataclass_from_dict(SampleBatSetup, component_config)
+        self.component_config = dataclass_from_dict(SenecBatSetup, component_config)
         self.sim_counter = SimCounter(self.__device_id, self.component_config.id, prefix="speicher")
         self.store = get_bat_value_store(self.component_config.id)
         self.component_info = ComponentInfo.from_component_config(self.component_config)
@@ -29,4 +29,4 @@ class SampleBat:
         self.store.set(bat_state)
 
 
-component_descriptor = ComponentDescriptor(configuration_factory=SampleBatSetup)
+component_descriptor = ComponentDescriptor(configuration_factory=SenecBatSetup)

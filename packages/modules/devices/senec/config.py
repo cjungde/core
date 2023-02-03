@@ -4,61 +4,67 @@ from modules.common.component_setup import ComponentSetup
 
 
 @auto_str
-class SenecBatterieConfiguration:
-    def __init__(self, variant: int = 0, ip_address: Optional[str] = None):
-        self.variant = variant
+class SenecConfiguration:
+    def __init__(self, ip_address: Optional[str] = None):
         self.ip_address = ip_address
 
+
 @auto_str
-class SenecBatterie:
+class Senec:
     def __init__(self,
-                 name: str = "SenecBatterie",
-                 type: str = "senecbatterie",
+                 name: str = "Senec",
+                 type: str = "Senec",
                  id: int = 0,
-                 configuration: SenecBatterieConfiguration = None) -> None:
+                 configuration: SenecConfiguration = None) -> None:
         self.name = name
         self.type = type
         self.id = id
-        self.configuration = configuration or SenecBatterieConfiguration()
+        self.configuration = configuration or SenecConfiguration()
+
 
 @auto_str
-class SenecbatterieBatConfiguration:
+class SenecBatConfiguration:
     def __init__(self):
         pass
 
+
 @auto_str
-class SenecbatterieBatSetup(ComponentSetup[SenecbatterieBatConfiguration]):
+class SenecBatSetup(ComponentSetup[SenecBatConfiguration]):
     def __init__(self,
-                 name: str = "SenecBatterie Speicher",
+                 name: str = "Senec Speicher",
                  type: str = "bat",
                  id: int = 0,
-                 configuration: SenecbatterieBatConfiguration = None) -> None:
-        super().__init__(name, type, id, configuration or SenecbatterieBatConfiguration())
+                 configuration: SenecBatConfiguration = None) -> None:
+        super().__init__(name, type, id, configuration or SenecBatConfiguration())
+
 
 @auto_str
-class SenecbatterieCounterConfiguration:
+class SenecCounterConfiguration:
     def __init__(self):
         pass
 
+
 @auto_str
-class SenecbatterieCounterSetup(ComponentSetup[SenecbatterieCounterConfiguration]):
+class SenecCounterSetup(ComponentSetup[SenecCounterConfiguration]):
     def __init__(self,
-                 name: str = "SenecBatterie Zähler",
+                 name: str = "Senec Zähler",
                  type: str = "counter",
                  id: int = 0,
-                 configuration: SenecbatterieCounterConfiguration = None) -> None:
-        super().__init__(name, type, id, configuration or SenecbatterieCounterConfiguration())
+                 configuration: SenecCounterConfiguration = None) -> None:
+        super().__init__(name, type, id, configuration or SenecCounterConfiguration())
+
 
 @auto_str
-class SenecbatterieInverterConfiguration:
+class SenecInverterConfiguration:
     def __init__(self):
         pass
 
+
 @auto_str
-class SenecbatterieInverterSetup(ComponentSetup[SenecbatterieInverterConfiguration]):
+class SenecInverterSetup(ComponentSetup[SenecInverterConfiguration]):
     def __init__(self,
-                 name: str = "SenecBatterie Wechselrichter",
+                 name: str = "Senec Wechselrichter",
                  type: str = "inverter",
                  id: int = 0,
-                 configuration: SenecbatterieInverterConfiguration = None) -> None:
-        super().__init__(name, type, id, configuration or SenecbatterieInverterConfiguration())
+                 configuration: SenecInverterConfiguration = None) -> None:
+        super().__init__(name, type, id, configuration or SenecInverterConfiguration())

@@ -6,26 +6,26 @@ from helpermodules.cli import run_using_positional_cli_args
 from modules.common import req
 from modules.common.abstract_device import DeviceDescriptor
 from modules.common.configurable_device import ConfigurableDevice, ComponentFactoryByType, MultiComponentUpdater
-from modules.devices.sample_request_by_device import bat, counter, inverter
-from modules.devices.sample_request_by_device.bat import SampleBat
-from modules.devices.sample_request_by_device.config import Sample, SampleConfiguration, SampleBatSetup, SampleCounterSetup, SampleInverterSetup
-from modules.devices.sample_request_by_device.counter import SampleCounter
-from modules.devices.sample_request_by_device.inverter import SampleInverter
+from modules.devices.senec import bat, counter, inverter
+from modules.devices.senec.bat import SenecBat
+from modules.devices.senec.config import Senec, SenecConfiguration, SenecBatSetup, SenecCounterSetup, SenecInverterSetup
+from modules.devices.senec.counter import SenecCounter
+from modules.devices.senec.inverter import SenecInverter
 
 log = logging.getLogger(__name__)
 
 
-def create_device(device_config: Sample):
-    def create_bat_component(component_config: SampleBatSetup):
-        return SampleBat(device_config.id, component_config)
+def create_device(device_config: Senec):
+    def create_bat_component(component_config: SenecBatSetup):
+        return SenecBat(device_config.id, component_config)
 
-    def create_counter_component(component_config: SampleCounterSetup):
-        return SampleCounter(device_config.id, component_config)
+    def create_counter_component(component_config: SenecCounterSetup):
+        return SenecCounter(device_config.id, component_config)
 
-    def create_inverter_component(component_config: SampleInverterSetup):
-        return SampleInverter(device_config.id, component_config)
+    def create_inverter_component(component_config: SenecInverterSetup):
+        return SenecInverter(device_config.id, component_config)
 
-    def update_components(components: Iterable[Union[SampleBat, SampleCounter, SampleInverter]]):
+    def update_components(components: Iterable[Union[SenecBat, SenecCounter, SenecInverter]]):
         response = req.get_http_session().get(device_config.configuration.ip_address, timeout=5).json()
         for component in components:
             component.update(response)
@@ -49,7 +49,7 @@ COMPONENT_TYPE_TO_MODULE = {
 
 
 def read_legacy(component_type: str, ip_address: str, id: int, num: Optional[int]) -> None:
-    device_config = Sample(configuration=SampleConfiguration(ip_address=ip_address, id=id))
+    device_config = Senec(configuration=SenecConfiguration(ip_address=ip_address, id=id))
     dev = create_device(device_config)
     if component_type in COMPONENT_TYPE_TO_MODULE:
         component_config = COMPONENT_TYPE_TO_MODULE[component_type].component_descriptor.configuration_factory()
@@ -61,8 +61,8 @@ def read_legacy(component_type: str, ip_address: str, id: int, num: Optional[int
     component_config.id = num
     dev.add_component(component_config)
 
-    log.debug('Sample IP-Adresse: ' + ip_address)
-    log.debug('Sample ID: ' + str(id))
+    log.debug('Senec IP-Adresse: ' + ip_address)
+    log.debug('Senec ID: ' + str(id))
 
     dev.update()
     # Hier kann es notwendig sein, für 1.9 eine eigene Update-Methode zu implemenitieren, die die Werte wie benötigt miteinander verrechnet.
@@ -73,4 +73,4 @@ def main(argv: List[str]):
     run_using_positional_cli_args(read_legacy, argv)
 
 
-device_descriptor = DeviceDescriptor(configuration_factory=Sample)
+device_descriptor = DeviceDescriptor(configuration_factory=Senec)

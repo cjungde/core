@@ -13,7 +13,7 @@ class SenecConfiguration:
 class Senec:
     def __init__(self,
                  name: str = "Senec",
-                 type: str = "Senec",
+                 type: str = "senec",
                  id: int = 0,
                  configuration: SenecConfiguration = None) -> None:
         self.name = name

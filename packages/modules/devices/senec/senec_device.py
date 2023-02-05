@@ -24,9 +24,9 @@ __email__ = "nico@smashnet.de"
 __status__ = "Production"
 
 logging.basicConfig(format='%(asctime)s %(levelname)s:%(message)s',level=logging.INFO)
-log = logging.getLogger("Senec")
+log = logging.getLogger("Senec_Connection")
 
-class Senec():
+class Senec_Connection():
 
     def __init__(self, device_ip):
         self.device_ip = device_ip
@@ -244,5 +244,5 @@ SYSTEM_STATE_NAME = {
 }
 
 if __name__ == "__main__":
-    api = Senec("IP_OF_YOUR_SENEC_APPLIANCE")
-    print(api.get_values())
+    api = Senec_Connection("IP_OF_YOUR_SENEC_APPLIANCE")
+   #print(api.get_values())

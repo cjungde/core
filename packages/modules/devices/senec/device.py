@@ -6,11 +6,16 @@ from helpermodules.cli import run_using_positional_cli_args
 from modules.common import req
 from modules.common.abstract_device import DeviceDescriptor
 from modules.common.configurable_device import ConfigurableDevice, ComponentFactoryByType, MultiComponentUpdater
-from modules.devices.senec import bat, counter, inverter
+from modules.devices.senec import bat, counter, inverter, senec_device 
 from modules.devices.senec.bat import SenecBat
-from modules.devices.senec.config import Senec, SenecConfiguration, SenecBatSetup, SenecCounterSetup, SenecInverterSetup
+from modules.devices.senec.config import Senec, SenecBatSetup, SenecCounterSetup, SenecInverterSetup
 from modules.devices.senec.counter import SenecCounter
 from modules.devices.senec.inverter import SenecInverter
+from modules.devices.senec.senec_device import Senec_Connection
+
+
+Senec_Connection
+
 
 log = logging.getLogger(__name__)
 
@@ -26,7 +31,46 @@ def create_device(device_config: Senec):
         return SenecInverter(device_config.id, component_config)
 
     def update_components(components: Iterable[Union[SenecBat, SenecCounter, SenecInverter]]):
-        response = req.get_http_session().get(device_config.configuration.ip_address, timeout=5).json()
+        
+        #init api
+        api = Senec_Connection(device_config.configuration.ip_address)
+        response=api.get_values()
+        
+        log.debug("Geraeteinformationen")
+        log.debug("Aktueller Status    : {0}".format(response["STATISTIC"]['CURRENT_STATE']))
+        log.debug("Kapazitaet          : {0}".format(response["FACTORY"]['DESIGN_CAPACITY']))
+        log.debug("Batterie - Laden/Entladen    : {0} W".format(round(response["ENERGY"]['GUI_BAT_DATA_POWER'],2)))
+        log.debug("Power - Einspeisung / Bezug  : {0} W".format(round(response["ENERGY"]['GUI_GRID_POW'],2)))
+        log.debug("Power - Hausverbrauch        : {0} W".format(round(response["ENERGY"]['GUI_HOUSE_POW'],2)))
+        
+        log.debug("")
+        log.debug("PV Leistung - String 1       : {0} W".format(round(response["PV1"]['MPP_POWER'][0],2)))
+        log.debug("PV Leistung - String 2       : {0} W".format(round(response["PV1"]['MPP_POWER'][1],2)))
+        log.debug("PV Leistung - String 3       : {0} W".format(round(response["PV1"]['MPP_POWER'][2],2)))
+        log.debug("PV Export Ratio              : {0} %".format(round(response["PV1"]['POWER_RATIO'],2)))
+        
+        log.debug("Frequency                    : {0} Hz".format(round(response["PM1OBJ1"]['FREQ'],2)))
+        log.debug("Spannung (1)                 : {0} V".format(round(response["PM1OBJ1"]['U_AC'][0],2)))
+        log.debug("Spannung (2)                 : {0} V".format(round(response["PM1OBJ1"]['U_AC'][1],2)))
+        log.debug("Spannung (3)                 : {0} V".format(round(response["PM1OBJ1"]['U_AC'][2],2)))
+        log.debug("Strom (1)                    : {0} A".format(round(response["PM1OBJ1"]['I_AC'][0],2)))
+        log.debug("Strom (2)                    : {0} A".format(round(response["PM1OBJ1"]['I_AC'][1],2)))
+        log.debug("Strom (3)                    : {0} A".format(round(response["PM1OBJ1"]['I_AC'][2],2)))
+        log.debug("Leistung (1)                 : {0} W".format(round(response["PM1OBJ1"]['P_AC'][0],2)))
+        log.debug("Leistung (2)                 : {0} W".format(round(response["PM1OBJ1"]['P_AC'][1],2)))
+        log.debug("Leistung (3)                 : {0} W".format(round(response["PM1OBJ1"]['P_AC'][2],2)))
+        log.debug("Gesamtleistung               : {0} W".format(round(response["PM1OBJ1"]['P_TOTAL'],2)))
+        
+        log.debug("Batterie - Laden/Entladen    : {0} W".format(round(response["ENERGY"]['GUI_BAT_DATA_POWER'],2)))
+        log.debug("Batterie - Fuellstand        : {0} %".format(round(response["ENERGY"]['GUI_BAT_DATA_FUEL_CHARGE'],2)))
+        log.debug("Power - PV Leistung          : {0} W".format(round(response["ENERGY"]['GUI_INVERTER_POWER'],2)))
+        
+        log.debug("Gesamtlademenge              : {0} Wh".format(round(response["STATISTIC"]['LIVE_BAT_CHARGE'],2)))
+        log.debug("Gesamtentlademenge           : {0} Wh".format(round(response["STATISTIC"]['LIVE_BAT_DISCHARGE'],2)))
+        log.debug("Gesamtimport                 : {0} Wh".format(round(response["STATISTIC"]['LIVE_GRID_IMPORT'],2)))
+        log.debug("Gesamteinspeisung            : {0} Wh".format(round(response["STATISTIC"]['LIVE_GRID_EXPORT'],2)))
+        log.debug("Gesamt PV Erzeugung (vom WR) : {0} Wh".format(round(response["STATISTIC"]['LIVE_PV_GEN'],2)))
+                
         for component in components:
             component.update(response)
 
@@ -46,31 +90,5 @@ COMPONENT_TYPE_TO_MODULE = {
     "counter": counter,
     "inverter": inverter
 }
-
-
-def read_legacy(component_type: str, ip_address: str, id: int, num: Optional[int]) -> None:
-    device_config = Senec(configuration=SenecConfiguration(ip_address=ip_address, id=id))
-    dev = create_device(device_config)
-    if component_type in COMPONENT_TYPE_TO_MODULE:
-        component_config = COMPONENT_TYPE_TO_MODULE[component_type].component_descriptor.configuration_factory()
-    else:
-        raise Exception(
-            "illegal component type " + component_type + ". Allowed values: " +
-            ','.join(COMPONENT_TYPE_TO_MODULE.keys())
-        )
-    component_config.id = num
-    dev.add_component(component_config)
-
-    log.debug('Senec IP-Adresse: ' + ip_address)
-    log.debug('Senec ID: ' + str(id))
-
-    dev.update()
-    # Hier kann es notwendig sein, für 1.9 eine eigene Update-Methode zu implemenitieren, die die Werte wie benötigt miteinander verrechnet.
-    # Hier muss auch bei Hybrid-Systemen die Speicher-und PV-Leistung verrechnet werden.
-
-
-def main(argv: List[str]):
-    run_using_positional_cli_args(read_legacy, argv)
-
 
 device_descriptor = DeviceDescriptor(configuration_factory=Senec)

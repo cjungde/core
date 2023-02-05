@@ -47,7 +47,7 @@ class SenecCounterConfiguration:
 @auto_str
 class SenecCounterSetup(ComponentSetup[SenecCounterConfiguration]):
     def __init__(self,
-                 name: str = "Senec Zähler",
+                 name: str = "Senec EVU Zähler angebunden über den Speicher",
                  type: str = "counter",
                  id: int = 0,
                  configuration: SenecCounterConfiguration = None) -> None:
@@ -63,7 +63,7 @@ class SenecInverterConfiguration:
 @auto_str
 class SenecInverterSetup(ComponentSetup[SenecInverterConfiguration]):
     def __init__(self,
-                 name: str = "Senec Wechselrichter",
+                 name: str = "Senec Wechselrichter Daten ausgelesen über den Speicher",
                  type: str = "inverter",
                  id: int = 0,
                  configuration: SenecInverterConfiguration = None) -> None:

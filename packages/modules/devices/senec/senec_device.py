@@ -4,12 +4,17 @@
 """
 Library to get a lot of useful data out of Senec appliances.
 
-Tested with: SENEC.Home V3 hybrid duo
+Tested with: 
+- SENEC.Home V3 hybrid duo
+- SENEC.Home V2.1
+
+Extended some of the read fields to enable the use with OpenWB V2
 
 Kudos:
+* based on the work of smashnet taken from https://gist.github.com/smashnet/82ad0b9d7f0ba2e5098e6649ba08f88a 
 * SYSTEM_STATE_NAME taken from https://github.com/mchwalisz/pysenec
 """
-#from numpy import empty
+
 import requests
 import struct
 import logging
@@ -23,8 +28,7 @@ __maintainer__ = "Nicolas Inden"
 __email__ = "nico@smashnet.de"
 __status__ = "Production"
 
-logging.basicConfig(format='%(asctime)s %(levelname)s:%(message)s',level=logging.INFO)
-log = logging.getLogger("Senec_Connection")
+log = logging.getLogger(__name__)
 
 class Senec_Connection():
 
@@ -245,4 +249,3 @@ SYSTEM_STATE_NAME = {
 
 if __name__ == "__main__":
     api = Senec_Connection("IP_OF_YOUR_SENEC_APPLIANCE")
-   #print(api.get_values())

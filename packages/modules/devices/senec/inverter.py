@@ -6,7 +6,6 @@ from modules.common.fault_state import ComponentInfo
 from modules.common.simcount import SimCounter
 from modules.common.store import get_inverter_value_store
 from modules.devices.senec.config import SenecInverterSetup
-from modules.devices.senec.senec_device import Senec_Connection
 
 
 class SenecInverter:

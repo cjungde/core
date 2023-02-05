@@ -13,10 +13,6 @@ from modules.devices.senec.counter import SenecCounter
 from modules.devices.senec.inverter import SenecInverter
 from modules.devices.senec.senec_device import Senec_Connection
 
-
-Senec_Connection
-
-
 log = logging.getLogger(__name__)
 
 

@@ -5,10 +5,6 @@ from modules.common.component_type import ComponentDescriptor
 from modules.common.fault_state import ComponentInfo
 from modules.common.store import get_counter_value_store
 from modules.devices.senec.config import SenecCounterSetup
-from modules.devices.senec.senec_device import Senec_Connection
-import logging
-
-log = logging.getLogger(__name__)
 
 
 class SenecCounter:

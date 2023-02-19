@@ -18,8 +18,8 @@ class SenecCounter:
 
         counter_state = CounterState(
             currents=[round(response["PM1OBJ1"]['I_AC'][0],2),round(response["PM1OBJ1"]['I_AC'][1],2),round(response["PM1OBJ1"]['I_AC'][2],2)],
-            imported=round(response["STATISTIC"]['LIVE_GRID_IMPORT'],2),
-            exported=round(response["STATISTIC"]['LIVE_GRID_EXPORT'],2),
+            imported=round(response["STATISTIC"]['LIVE_GRID_IMPORT']*1000,2),
+            exported=round(response["STATISTIC"]['LIVE_GRID_EXPORT']*1000,2),
             power=round(response["PM1OBJ1"]['P_TOTAL'],2),
             frequency=round(response["PM1OBJ1"]['FREQ'],2),
             #power_factors=power_factors,

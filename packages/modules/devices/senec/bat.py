@@ -19,8 +19,8 @@ class SenecBat:
         bat_state = BatState(
             power=round(response["ENERGY"]['GUI_BAT_DATA_POWER'],2),
             soc=round(response["ENERGY"]['GUI_BAT_DATA_FUEL_CHARGE'],2),
-            imported=(round(response["STATISTIC"]['LIVE_BAT_CHARGE'],3))*1000,
-            exported=(round(response["STATISTIC"]['LIVE_BAT_DISCHARGE'],3))*1000
+            imported=(round(response["STATISTIC"]['LIVE_BAT_CHARGE']*1000,3)),
+            exported=(round(response["STATISTIC"]['LIVE_BAT_DISCHARGE']*1000,3))
         )
         self.store.set(bat_state)
 

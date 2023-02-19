@@ -22,7 +22,7 @@ class SenecInverter:
         inverter_state = InverterState(
             #currents=currents,
             power=round(response["ENERGY"]['GUI_INVERTER_POWER'],2),
-            exported=round(response["STATISTIC"]['LIVE_PV_GEN'],2),
+            exported=round(response["STATISTIC"]['LIVE_PV_GEN']*1000,2),
             #dc_power=dc_power
         )
         self.store.set(inverter_state)

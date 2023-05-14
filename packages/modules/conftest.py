@@ -13,6 +13,9 @@ sys.modules['lxml'] = type(sys)('lxml')
 sys.modules['lxml.html'] = type(sys)('lxml.html')
 sys.modules['bs4'] = type(sys)('bs4')
 sys.modules['pkce'] = type(sys)('pkce')
+sys.modules['skodaconnect'] = type(sys)('skodaconnect')
+sys.modules['skodaconnect.Connection'] = type(sys)('skodaconnect.Connection')
+# sys.modules['telnetlib3'] = type(sys)('telnetlib3')
 
 module = type(sys)('pymodbus.client.sync')
 module.ModbusSerialClient = Mock()
@@ -26,6 +29,10 @@ sys.modules['pymodbus.constants'] = module
 module = type(sys)('pymodbus.payload')
 module.BinaryPayloadDecoder = Mock()
 sys.modules['pymodbus.payload'] = module
+
+# module = type(sys)('telnetlib3')
+# module.TelnetReader = Mock()
+# sys.modules['telnetlib3'] = module
 
 
 @pytest.fixture(autouse=True)

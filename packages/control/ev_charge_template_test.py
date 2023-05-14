@@ -5,6 +5,7 @@ import pytest
 
 from control import data
 from control import optional
+from control.bat_all import SwitchOnBatState
 from control.ev import ChargeTemplate, EvTemplate, EvTemplateData, SelectedPlan
 from control.general import General
 from helpermodules import timecheck
@@ -70,19 +71,26 @@ def test_instant_charging(selected: str, current_soc: float, used_amount: float,
 
 
 @pytest.mark.parametrize(
-    "min_soc, min_current, current_soc, expected",
+    "min_soc, min_current, current_soc, switch_on_soc_state, expected",
     [
-        pytest.param(0, 0, 100, (0, "stop", ChargeTemplate.PV_CHARGING_SOC_REACHED), id="max soc reached"),
-        pytest.param(15, 0, 14, (10, "instant_charging", None), id="min soc not reached"),
-        pytest.param(15, 8, 15, (8, "instant_charging", None), id="min current configured"),
-        pytest.param(15, 0, 15, (6, "pv_charging", None), id="bare pv charging"),
+        pytest.param(0, 0, 100, SwitchOnBatState.CHARGE_FROM_BAT, (0, "stop",
+                     ChargeTemplate.PV_CHARGING_SOC_REACHED), id="max soc reached"),
+        pytest.param(15, 0, 14, SwitchOnBatState.CHARGE_FROM_BAT,
+                     (10, "instant_charging", None), id="min soc not reached"),
+        pytest.param(15, 8, 15, SwitchOnBatState.CHARGE_FROM_BAT,
+                     (8, "instant_charging", None), id="min current configured"),
+        pytest.param(15, 8, 15, SwitchOnBatState.SWITCH_OFF_SOC_REACHED, (0, "stop",
+                     SwitchOnBatState.SWITCH_OFF_SOC_REACHED.value), id="min current, bat reached switch off soc"),
+        pytest.param(15, 0, 15, SwitchOnBatState.CHARGE_FROM_BAT, (6, "pv_charging", None), id="bare pv charging"),
     ])
-def test_pv_charging(min_soc: int, min_current: int, current_soc: float,
+def test_pv_charging(min_soc: int, min_current: int, current_soc: float, switch_on_soc_state: SwitchOnBatState,
                      expected: Tuple[int, str, Optional[str]]):
     # setup
     ct = ChargeTemplate(0)
     ct.data.chargemode.pv_charging.min_soc = min_soc
     ct.data.chargemode.pv_charging.min_current = min_current
+    data.data.bat_all_data.data.set.switch_on_soc_state = switch_on_soc_state
+    data.data.bat_all_data.data.config.configured = True
 
     # execution
     ret = ct.pv_charging(current_soc, 6)
@@ -188,7 +196,7 @@ def test_search_plan(check_duration_return1: Tuple[Optional[float], bool],
         pytest.param(SelectedPlan(), 90, 0, "soc", (0, "stop",
                      ChargeTemplate.SCHEDULED_CHARGING_REACHED_LIMIT_SOC, 1), id="reached limit soc"),
         pytest.param(SelectedPlan(), 80, 0, "soc", (6, "pv_charging",
-                     ChargeTemplate.SCHEDULED_CHARGING_REACHED_SCHEDULED_SOC, 1), id="reached scheduled soc"),
+                     ChargeTemplate.SCHEDULED_CHARGING_REACHED_SCHEDULED_SOC, 3), id="reached scheduled soc"),
         pytest.param(SelectedPlan(phases=3), 0, 1000, "amount", (0, "stop",
                      ChargeTemplate.SCHEDULED_CHARGING_REACHED_AMOUNT, 3), id="reached amount"),
         pytest.param(SelectedPlan(remaining_time=299), 0, 999, "amount",
@@ -203,7 +211,7 @@ def test_search_plan(check_duration_return1: Tuple[Optional[float], bool],
                      (16, "instant_charging", ChargeTemplate.SCHEDULED_CHARGING_MAX_CURRENT.format(16), 3),
                      id="too late, but didn't miss for today"),
         pytest.param(SelectedPlan(remaining_time=301), 79, 0, "soc",
-                     (6, "pv_charging", ChargeTemplate.SCHEDULED_CHARGING_USE_PV, 1), id="too early, use pv"),
+                     (6, "pv_charging", ChargeTemplate.SCHEDULED_CHARGING_USE_PV, 3), id="too early, use pv"),
     ])
 def test_scheduled_charging_calc_current(plan_data: SelectedPlan,
                                          soc: int,
@@ -218,7 +226,7 @@ def test_scheduled_charging_calc_current(plan_data: SelectedPlan,
     ct.data.chargemode.scheduled_charging.plans = {0: plan}
 
     # execution
-    ret = ct.scheduled_charging_calc_current(plan_data, soc, used_amount, 3, 6)
+    ret = ct.scheduled_charging_calc_current(plan_data, soc, used_amount, 3, 3, 6)
 
     # evaluation
     assert ret == expected

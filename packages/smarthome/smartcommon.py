@@ -11,6 +11,7 @@ from modules.smarthome.mqtt.smartmqtt import Smqtt
 from modules.smarthome.http.smarthttp import Shttp
 from modules.smarthome.idm.smartidm import Sidm
 from modules.smarthome.elwa.smartelwa import Selwa
+from modules.smarthome.askoheat.smartaskoheat import Saskoheat
 from modules.smarthome.nxdacxx.smartnxdacxx import Snxdacxx
 from modules.smarthome.acthor.smartacthor import Sacthor
 from modules.smarthome.avmhomeautomation.smartavm import Savm
@@ -109,7 +110,7 @@ def on_message(client, userdata, msg) -> None:
         log.warning(" Skipped msg " + msg.topic + " Value " + value)
 
 
-def getdevicevalues(uberschuss: int, uberschussoffset: int) -> None:
+def getdevicevalues(uberschuss: int, uberschussoffset: int, pvwatt: int, chargestatus: bool) -> None:
     global mydevices
     totalwatt = 0
     totalwattot = 0
@@ -120,6 +121,8 @@ def getdevicevalues(uberschuss: int, uberschussoffset: int) -> None:
     Sbase.eindevstatus = 0
     mqtt_all = {}
     for mydevice in mydevices:
+        mydevice.pvwatt = pvwatt
+        mydevice.chargestatus = chargestatus
         mydevice.getwatt(uberschuss, uberschussoffset)
         watt = mydevice.newwatt
         wattk = mydevice.newwattk
@@ -198,7 +201,10 @@ def sendmq(mqtt_input: Dict[str, str]) -> None:
         else:
             log.info("Mq pub " + str(key) + "=" +
                      str(value) + " old " + str(valueold))
-            mqtt_cache[key] = value
+            if (mqttcs in str(key)):
+                log.info("Mq no caching " + str(key))
+            else:
+                mqtt_cache[key] = value
             client.publish(key, payload=value, qos=0, retain=True)
             client.loop(timeout=2.0)
     client.disconnect()
@@ -282,6 +288,8 @@ def update_devices() -> None:
                     mydevice = Snxdacxx()
                 elif (device_type == 'elwa'):
                     mydevice = Selwa()
+                elif (device_type == 'askoheat'):
+                    mydevice = Saskoheat()
                 elif (device_type == 'idm'):
                     mydevice = Sidm()
                 elif (device_type == 'mqtt'):
@@ -383,7 +391,8 @@ def resetmaxeinschaltdauerfunc() -> None:
         resetmaxeinschaltdauer = 0
 
 
-def loadregelvars(wattbezug: int, speicherleistung: int, speichersoc: int) -> Tuple[int, int]:
+def loadregelvars(wattbezug: int, speicherleistung: int, speichersoc: int,
+                  pvwatt: int,  chargestatus: bool) -> Tuple[int, int]:
     global maxspeicher
     global mydevices
     uberschuss = wattbezug + speicherleistung
@@ -391,9 +400,9 @@ def loadregelvars(wattbezug: int, speicherleistung: int, speichersoc: int) -> Tu
     log.info("EVU Bezug(-)/Einspeisung(+): " + str(wattbezug) +
              " max Speicherladung: " + str(maxspeicher))
     log.info("Uberschuss: " + str(uberschuss) +
-             " Uberschuss mit Offset: " + str(uberschussoffset))
+             " Uberschuss mit Offset: " + str(uberschussoffset) + " Pv: " + str(pvwatt))
     log.info("Speicher Entladung(-)/Ladung(+): " +
-             str(speicherleistung) + " SpeicherSoC: " + str(speichersoc))
+             str(speicherleistung) + " SpeicherSoC: " + str(speichersoc) + " Ladung: " + str(chargestatus))
     reread = 0
     try:
         with open(bp+'/ramdisk/rereadsmarthomedevices', 'r') as value:
@@ -442,16 +451,17 @@ def initparam(inpcg: str, inpcs: str, inpsdevstat: str, inpsglobstat: str, inpto
     mqttport = inpport
 
 
-def mainloop(wattbezug: int, speicherleistung: int, speichersoc: int) -> None:
+def mainloop(wattbezug: int, speicherleistung: int, speichersoc: int, pvwatt: int = 0,
+             chargestatus: bool = False) -> None:
     global firststart
     if firststart:
         readmq()
         firststart = False
     mqtt_man = {}
     sendmess = 0
-    uberschuss, uberschussoffset = loadregelvars(wattbezug, speicherleistung, speichersoc)
+    uberschuss, uberschussoffset = loadregelvars(wattbezug, speicherleistung, speichersoc, pvwatt, chargestatus)
     resetmaxeinschaltdauerfunc()
-    getdevicevalues(uberschuss, uberschussoffset)
+    getdevicevalues(uberschuss, uberschussoffset, pvwatt, chargestatus)
     conditions(speichersoc)
     # do the manual stuff
     for i in range(1, (numberOfSupportedDevices+1)):
@@ -483,4 +493,3 @@ def mainloop(wattbezug: int, speicherleistung: int, speichersoc: int) -> None:
                     mqtt_man[pref + 'device_manual_control'] = workman
     if (sendmess == 1):
         sendmq(mqtt_man)
-    time.sleep(5)

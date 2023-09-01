@@ -11,3 +11,8 @@
   * [Wiki-Eintrag erstellen](https://github.com/openWB/core/wiki/Wiki-Eintrag_erstellen)
   * [Entwicklungsumgebung](https://github.com/openWB/core/wiki/Entwicklungsumgebung)
   * [Neues Gerät programmieren](https://github.com/openWB/core/wiki/Neues-Gerät-programmieren)
+  * [Neues SoC-Modul programmieren](https://github.com/openWB/core/wiki/Neues-Soc-Modul-programmieren)
+* Konfiguration
+  * [Cloud-Sicherung](https://github.com/openWB/core/wiki/Cloud-Sicherung)
+    * [NextCloud](https://github.com/openWB/core/wiki/NextCloud-als-Sicherungs-Cloud-einrichten)
+  * [Hierarchie mit Hausverbrauchs-Zähler](https://github.com/openWB/core/wiki/Hausverbrauchs-Zähler)

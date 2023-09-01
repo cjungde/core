@@ -5,11 +5,11 @@ from control import data
 from control.algorithm import common
 from control.loadmanagement import LimitingValue, Loadmanagement
 from control.counter import Counter
-from control.chargepoint import Chargepoint
+from control.chargepoint.chargepoint import Chargepoint
 from control.algorithm.filter_chargepoints import (get_chargepoints_by_mode, get_chargepoints_by_mode_and_counter,
                                                    get_preferenced_chargepoint_charging, get_chargepoints_pv_charging,
                                                    get_chargepoints_surplus_controlled)
-from control.chargepoint_state import ChargepointState, CHARGING_STATES
+from control.chargepoint.chargepoint_state import ChargepointState, CHARGING_STATES
 from modules.common.utils.component_parser import get_component_name_by_id
 
 log = logging.getLogger(__name__)
@@ -113,13 +113,13 @@ class SurplusControlled:
         evu_counter = data.data.counter_all_data.get_evu_counter()
 
         for cp in get_chargepoints_pv_charging():
-            def phase_switch_neccessary() -> bool:
+            def phase_switch_necessary() -> bool:
                 return cp.cp_ev_chargemode_support_phase_switch() and cp.data.get.phases_in_use != 1
             control_parameter = cp.data.set.charging_ev_data.data.control_parameter
             if cp.data.set.charging_ev_data.chargemode_changed:
                 if control_parameter.state == ChargepointState.CHARGING_ALLOWED:
                     if (cp.data.set.charging_ev_data.ev_template.data.prevent_charge_stop is False and
-                            phase_switch_neccessary() is False):
+                            phase_switch_necessary() is False):
                         threshold = evu_counter.calc_switch_off_threshold(cp)[0]
                         if evu_counter.calc_raw_surplus() - cp.data.set.required_power < threshold:
                             control_parameter.required_currents = [0]*3
@@ -128,7 +128,7 @@ class SurplusControlled:
             else:
                 if ((control_parameter.state == ChargepointState.CHARGING_ALLOWED or
                         control_parameter.state == ChargepointState.SWITCH_OFF_DELAY) and
-                        phase_switch_neccessary() is False):
+                        phase_switch_necessary() is False):
                     evu_counter.switch_off_check_threshold(cp)
                 if control_parameter.state == ChargepointState.SWITCH_OFF_DELAY:
                     evu_counter.switch_off_check_timer(cp)

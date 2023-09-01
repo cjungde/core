@@ -14,12 +14,13 @@ from typing import List, Dict, Optional, Tuple
 from control import data
 from control.bat_all import SwitchOnBatState
 from control.chargemode import Chargemode as Chargemode_enum
-from control.chargepoint_state import ChargepointState, PHASE_SWITCH_STATES
+from control.chargepoint.chargepoint_state import ChargepointState, PHASE_SWITCH_STATES
 from dataclass_utils.factories import currents_list_factory, empty_dict_factory, empty_list_factory
 from helpermodules.abstract_plans import Limit, limit_factory, ScheduledChargingPlan, TimeChargingPlan
 from helpermodules.pub import Pub
 from helpermodules import timecheck
-from modules.common.abstract_soc import AbstractSoc
+from modules.common.abstract_soc import SocUpdateData
+from modules.common.configurable_vehicle import ConfigurableVehicle
 
 log = logging.getLogger(__name__)
 
@@ -99,7 +100,7 @@ def chargemode_factory() -> Chargemode:
 
 @dataclass
 class ChargeTemplateData:
-    name: str = "Standard-Ladeprofil-Vorlage"
+    name: str = "Standard-Lade-Profil"
     disable_after_unplug: bool = False
     prio: bool = False
     load_default: bool = False
@@ -109,7 +110,7 @@ class ChargeTemplateData:
 
 @dataclass
 class EvTemplateData:
-    name: str = "Standard-Fahrzeug-Vorlage"
+    name: str = "Standard-Fahrzeug-Profil"
     max_current_multi_phases: int = 16
     max_phases: int = 3
     phase_switch_pause: int = 2
@@ -117,11 +118,11 @@ class EvTemplateData:
     prevent_charge_stop: bool = False
     control_pilot_interruption: bool = False
     control_pilot_interruption_duration: int = 4
-    average_consump: float = 17
+    average_consump: float = 17000
     min_current: int = 6
     max_current_single_phase: int = 32
-    battery_capacity: float = 82
-    nominal_difference: float = 0.5
+    battery_capacity: float = 82000
+    nominal_difference: float = 1
     keep_charge_active_duration: int = 40
 
 
@@ -140,8 +141,8 @@ class ControlParameter:
     timestamp_perform_phase_switch: Optional[str] = None
     submode: Chargemode_enum = Chargemode_enum.STOP
     chargemode: Chargemode_enum = Chargemode_enum.STOP
-    used_amount_instant_charging: float = 0
-    imported_at_plan_start: float = 0
+    imported_instant_charging: Optional[float] = None
+    imported_at_plan_start: Optional[float] = None
     current_plan: Optional[str] = None
     state: ChargepointState = ChargepointState.NO_CHARGING_ALLOWED
 
@@ -206,7 +207,7 @@ class Ev:
         try:
             self.ev_template: EvTemplate = EvTemplate()
             self.charge_template: ChargeTemplate = ChargeTemplate(0)
-            self.soc_module: AbstractSoc = None
+            self.soc_module: ConfigurableVehicle = None
             self.chargemode_changed = False
             self.num = index
             self.data = EvData()
@@ -229,9 +230,9 @@ class Ev:
             Pub().pub("openWB/set/vehicle/"+str(self.num) +
                       "/control_parameter/chargemode", "stop")
             Pub().pub("openWB/set/vehicle/"+str(self.num) +
-                      "/control_parameter/used_amount_instant_charging", 0)
+                      "/control_parameter/imported_instant_charging", None)
             Pub().pub("openWB/set/vehicle/"+str(self.num) +
-                      "/control_parameter/imported_at_plan_start", 0)
+                      "/control_parameter/imported_at_plan_start", None)
             Pub().pub("openWB/set/vehicle/"+str(self.num) +
                       "/control_parameter/current_plan", None)
             Pub().pub("openWB/set/vehicle/"+str(self.num) +
@@ -241,31 +242,33 @@ class Ev:
             self.data.control_parameter.timestamp_perform_phase_switch = None
             self.data.control_parameter.submode = "stop"
             self.data.control_parameter.chargemode = "stop"
-            self.data.control_parameter.used_amount_instant_charging = 0
-            self.data.control_parameter.imported_at_plan_start = 0
+            self.data.control_parameter.imported_instant_charging = None
+            self.data.control_parameter.imported_at_plan_start = None
             self.data.control_parameter.current_plan = None
             self.data.control_parameter.state = ChargepointState.NO_CHARGING_ALLOWED
         except Exception:
             log.exception("Fehler im ev-Modul "+str(self.num))
 
-    def soc_interval_expired(self, charge_state: bool) -> bool:
+    def soc_interval_expired(self, soc_update_data: SocUpdateData) -> bool:
         request_soc = False
         if self.data.get.soc_timestamp == "":
             # Initiale Abfrage
             request_soc = True
         else:
-            if charge_state is True or (self.data.set.soc_error_counter < 3 and self.data.get.fault_state == 2):
-                interval = 5
-            else:
-                interval = 720
-            # Zeitstempel prüfen, ob wieder abgefragt werden muss.
-            if timecheck.check_timestamp(self.data.get.soc_timestamp, interval*60-5) is False:
-                # Zeit ist abgelaufen
-                request_soc = True
+            if soc_update_data.plug_state is True or self.soc_module.interval_config.request_only_plugged is False:
+                if (soc_update_data.charge_state is True or
+                        (self.data.set.soc_error_counter < 3 and self.data.get.fault_state == 2)):
+                    interval = self.soc_module.interval_config.request_interval_charging
+                else:
+                    interval = self.soc_module.interval_config.request_interval_not_charging
+                # Zeitstempel prüfen, ob wieder abgefragt werden muss.
+                if timecheck.check_timestamp(self.data.get.soc_timestamp, interval*60-5) is False:
+                    # Zeit ist abgelaufen
+                    request_soc = True
         return request_soc
 
     def get_required_current(self,
-                             charged_since_mode_switch: float,
+                             imported: float,
                              max_phases: int,
                              phase_switch_supported: bool) -> Tuple[bool, Optional[str], str, float, int]:
         """ ermittelt, ob und mit welchem Strom das EV geladen werden soll (unabhängig vom Lastmanagement)
@@ -292,7 +295,9 @@ class Ev:
         state = True
         try:
             if self.charge_template.data.chargemode.selected == "scheduled_charging":
-                used_amount = charged_since_mode_switch - self.data.control_parameter.imported_at_plan_start
+                if self.data.control_parameter.imported_at_plan_start is None:
+                    self.data.control_parameter.imported_at_plan_start = imported
+                used_amount = imported - self.data.control_parameter.imported_at_plan_start
                 plan_data = self.charge_template.scheduled_charging_recent_plan(
                     self.data.get.soc,
                     self.ev_template,
@@ -306,10 +311,10 @@ class Ev:
                     if (self.charge_template.data.chargemode.scheduled_charging.plans[plan_data.num].limit.
                             selected == "amount" and
                             name != self.data.control_parameter.current_plan):
-                        self.data.control_parameter.imported_at_plan_start = charged_since_mode_switch
+                        self.data.control_parameter.imported_at_plan_start = imported
                         Pub().pub(
                             f"openWB/set/vehicle/{self.num}/control_parameter/imported_at_plan_start",
-                            charged_since_mode_switch)
+                            imported)
                 else:
                     name = None
                 required_current, submode, message, phases = self.charge_template.scheduled_charging_calc_current(
@@ -324,7 +329,12 @@ class Ev:
             # Wenn Zielladen auf Überschuss wartet, prüfen, ob Zeitladen aktiv ist.
             if (submode != "instant_charging" and
                     self.charge_template.data.time_charging.active):
-                used_amount = charged_since_mode_switch - self.data.control_parameter.imported_at_plan_start
+                if self.data.control_parameter.imported_at_plan_start is None:
+                    self.data.control_parameter.imported_at_plan_start = imported
+                    Pub().pub(
+                        f"openWB/set/vehicle/{self.num}/control_parameter/imported_at_plan_start",
+                        imported)
+                used_amount = imported - self.data.control_parameter.imported_at_plan_start
                 tmp_current, tmp_submode, tmp_message, name = self.charge_template.time_charging(
                     self.data.get.soc,
                     used_amount
@@ -332,22 +342,28 @@ class Ev:
                 if tmp_current > 0:
                     self.data.control_parameter.current_plan = name
                     Pub().pub(f"openWB/set/vehicle/{self.num}/control_parameter/current_plan", name)
+                    # Wenn mit einem neuen Plan geladen wird, muss auch die Energiemenge von neuem gezählt werden.
+                    if name != self.data.control_parameter.current_plan:
+                        self.data.control_parameter.imported_at_plan_start = imported
+                        Pub().pub(
+                            f"openWB/set/vehicle/{self.num}/control_parameter/imported_at_plan_start",
+                            imported)
                     required_current = tmp_current
                     submode = tmp_submode
                     message = tmp_message
             if (required_current == 0) or (required_current is None):
                 if self.charge_template.data.chargemode.selected == "instant_charging":
-                    # Wenn der Submode auf stop gestellt wird, wird auch die Energiemenge seit Moduswechsel
+                    # Wenn der Submode auf stop gestellt wird, wird auch die Energiemenge seit Wechsel des Modus
                     # zurückgesetzt, dann darf nicht die Energiemenge erneute geladen werden.
-                    if (self.charge_template.data.chargemode.instant_charging.limit.selected == "amount" and
-                            charged_since_mode_switch > self.data.control_parameter.used_amount_instant_charging):
-                        self.data.control_parameter.used_amount_instant_charging = charged_since_mode_switch
+                    if self.data.control_parameter.imported_instant_charging is None:
+                        self.data.control_parameter.imported_instant_charging = imported
                         Pub().pub(
-                            f"openWB/set/vehicle/{self.num}/control_parameter/used_amount_instant_charging",
-                            charged_since_mode_switch)
+                            f"openWB/set/vehicle/{self.num}/control_parameter/imported_instant_charging",
+                            imported)
+                    used_amount = imported - self.data.control_parameter.imported_instant_charging
                     required_current, submode, message = self.charge_template.instant_charging(
                         self.data.get.soc,
-                        self.data.control_parameter.used_amount_instant_charging)
+                        used_amount)
                 elif self.charge_template.data.chargemode.selected == "pv_charging":
                     required_current, submode, message = self.charge_template.pv_charging(
                         self.data.get.soc, self.ev_template.data.min_current)
@@ -424,7 +440,7 @@ class Ev:
                     min_current = self.data.control_parameter.required_current
                 if required_current < min_current:
                     required_current = min_current
-                    msg = ("Die Einstellungen in der Fahrzeug-Vorlage beschränken den Strom auf "
+                    msg = ("Die Einstellungen in dem Fahrzeug-Profil beschränken den Strom auf "
                            f"mindestens {required_current} A.")
                 else:
                     if phases == 1:
@@ -433,23 +449,23 @@ class Ev:
                         max_current = self.ev_template.data.max_current_multi_phases
                     if required_current > max_current:
                         required_current = max_current
-                        msg = ("Die Einstellungen in der Fahrzeug-Vorlage beschränken den Strom auf "
+                        msg = ("Die Einstellungen in dem Fahrzeug-Profil beschränken den Strom auf "
                                f"maximal {required_current} A.")
         return required_current, msg
 
-    def auto_phase_switch(self,
-                          cp_num: int,
-                          get_currents: List[float],
-                          get_power: float,
-                          max_current_cp: int) -> Tuple[int, float, Optional[str]]:
-        message = None
-        current = self.data.control_parameter.required_current
+    CURRENT_OUT_OF_NOMINAL_DIFFERENCE = (", da das Fahrzeug nicht mit der vorgegebenen Stromstärke +/- der erlaubten "
+                                         + "Stromabweichung aus dem Fahrzeug-Profil lädt.")
+    ENOUGH_POWER = ", da ausreichend Leistung für mehrphasiges Laden zur Verfügung steht."
+    NOT_ENOUGH_POWER = ", da nicht ausreichend Leistung für mehrphasiges Laden zur Verfügung steht."
+
+    def _check_phase_switch_conditions(self,
+                                       get_currents: List[float],
+                                       get_power: float,
+                                       max_current_cp: int) -> Tuple[bool, Optional[str]]:
         # Manche EV laden mit 6.1A bei 6A Sollstrom
         min_current = self.ev_template.data.min_current + self.ev_template.data.nominal_difference
         max_current = (min(self.ev_template.data.max_current_single_phase, max_current_cp)
                        - self.ev_template.data.nominal_difference)
-        timestamp_auto_phase_switch = self.data.control_parameter.timestamp_auto_phase_switch
-        phases_to_use = self.data.control_parameter.phases
         phases_in_use = self.data.control_parameter.phases
         pv_config = data.data.general_data.data.chargemode_config.pv_charging
         max_phases_ev = self.ev_template.data.max_phases
@@ -459,19 +475,56 @@ class Ev:
             feed_in_yield = 0
         evu_counter = data.data.counter_all_data.get_evu_counter()
         # verbleibender EVU-Überschuss unter Berücksichtigung der Einspeisegrenze und Speicherleistung
-        all_surplus = (evu_counter.calc_surplus() - evu_counter.data.set.released_surplus +
+        all_surplus = (-evu_counter.calc_surplus() - evu_counter.data.set.released_surplus +
+                       evu_counter.data.set.reserved_surplus - feed_in_yield)
+        condition_1_to_3 = (max(get_currents) > max_current and
+                            all_surplus > self.ev_template.data.min_current * max_phases_ev * 230
+                            - get_power and
+                            phases_in_use == 1)
+        condition_3_to_1 = max(get_currents) < min_current and all_surplus <= 0 and phases_in_use > 1
+        if condition_1_to_3 or condition_3_to_1:
+            return True, None
+        else:
+            if ((phases_in_use > 1 and max(get_currents) > min_current) or
+                    (phases_in_use == 1 and max(get_currents) < max_current)):
+                return False, self.CURRENT_OUT_OF_NOMINAL_DIFFERENCE
+            else:
+                if phases_in_use > 1:
+                    return False, self.ENOUGH_POWER
+                else:
+                    return False, self.NOT_ENOUGH_POWER
+
+    def auto_phase_switch(self,
+                          cp_num: int,
+                          get_currents: List[float],
+                          get_power: float,
+                          max_current_cp: int,
+                          max_phases: int) -> Tuple[int, float, Optional[str]]:
+        message = None
+        current = self.data.control_parameter.required_current
+        timestamp_auto_phase_switch = self.data.control_parameter.timestamp_auto_phase_switch
+        phases_to_use = self.data.control_parameter.phases
+        phases_in_use = self.data.control_parameter.phases
+        pv_config = data.data.general_data.data.chargemode_config.pv_charging
+        if self.charge_template.data.chargemode.pv_charging.feed_in_limit:
+            feed_in_yield = pv_config.feed_in_yield
+        else:
+            feed_in_yield = 0
+        evu_counter = data.data.counter_all_data.get_evu_counter()
+        # verbleibender EVU-Überschuss unter Berücksichtigung der Einspeisegrenze und Speicherleistung
+        all_surplus = (-evu_counter.calc_surplus() - evu_counter.data.set.released_surplus +
                        evu_counter.data.set.reserved_surplus - feed_in_yield)
         if phases_in_use == 1:
-            direction_str = "Umschaltverzögerung von 1 auf 3"
+            direction_str = f"Umschaltverzögerung von 1 auf {max_phases}"
             delay = pv_config.phase_switch_delay * 60
             required_power = (self.ev_template.data.max_current_single_phase * 230 -
-                              self.ev_template.data.min_current * max_phases_ev * 230)
-            new_phase = 3
+                              self.ev_template.data.min_current * max_phases * 230)
+            new_phase = max_phases
             new_current = self.ev_template.data.min_current
         else:
-            direction_str = "Umschaltverzögerung von 3 auf 1"
+            direction_str = f"Umschaltverzögerung von {max_phases} auf 1"
             delay = (16 - pv_config.phase_switch_delay) * 60
-            required_power = (self.ev_template.data.min_current * max_phases_ev * 230 -
+            required_power = (self.ev_template.data.min_current * max_phases * 230 -
                               self.ev_template.data.max_current_single_phase * 230)
             new_phase = 1
             new_current = self.ev_template.data.max_current_single_phase
@@ -481,13 +534,9 @@ class Ev:
             f'{required_power}W')
         # Wenn gerade umgeschaltet wird, darf kein Timer gestartet werden.
         if not self.ev_template.data.prevent_phase_switch:
-            condition_1_to_3 = (max(get_currents) > max_current and
-                                all_surplus > self.ev_template.data.min_current * max_phases_ev * 230
-                                - get_power and
-                                phases_in_use == 1)
-            condition_3_to_1 = max(get_currents) < min_current and all_surplus <= 0 and phases_in_use > 1
+            condition, condition_msg = self._check_phase_switch_conditions(get_currents, get_power, max_current_cp)
             if self.data.control_parameter.state not in PHASE_SWITCH_STATES:
-                if condition_3_to_1 or condition_1_to_3:
+                if condition:
                     # Umschaltverzögerung starten
                     timestamp_auto_phase_switch = timecheck.create_timestamp()
                     # Wenn nach der Umschaltung weniger Leistung benötigt wird, soll während der Verzögerung keine
@@ -497,7 +546,7 @@ class Ev:
                     message = f'{direction_str} Phasen für {delay/60} Min aktiv.'
                     self.data.control_parameter.state = ChargepointState.PHASE_SWITCH_DELAY
             else:
-                if condition_3_to_1 or condition_1_to_3:
+                if condition:
                     # Timer laufen lassen
                     if timecheck.check_timestamp(timestamp_auto_phase_switch, delay):
                         message = f'{direction_str} Phasen für {delay/60} Min aktiv.'
@@ -513,7 +562,7 @@ class Ev:
                     timestamp_auto_phase_switch = None
                     data.data.counter_all_data.get_evu_counter(
                     ).data.set.reserved_surplus -= max(0, required_power)
-                    message = f"{direction_str} Phasen abgebrochen."
+                    message = f"{direction_str} Phasen abgebrochen{condition_msg}"
                     self.data.control_parameter.state = ChargepointState.CHARGING_ALLOWED
 
         if message:
@@ -570,7 +619,7 @@ class SelectedPlan:
 
 
 class ChargeTemplate:
-    """ Klasse der Lademodus-Vorlage
+    """ Klasse der Lade-Profile
     """
     BUFFER = -1200  # nach mehr als 20 Min Überschreitung wird der Termin als verpasst angesehen
 
@@ -623,7 +672,7 @@ class ChargeTemplate:
 
     def instant_charging(self,
                          soc: float,
-                         used_amount_instant_charging: float) -> Tuple[int, str, Optional[str]]:
+                         imported_instant_charging: float) -> Tuple[int, str, Optional[str]]:
         """ prüft, ob die Lademengenbegrenzung erreicht wurde und setzt entsprechend den Ladestrom.
         """
         message = None
@@ -640,7 +689,7 @@ class ChargeTemplate:
                 else:
                     return 0, "stop", self.INSTANT_CHARGING_SOC_REACHED
             elif instant_charging.limit.selected == "amount":
-                if used_amount_instant_charging < self.data.chargemode.instant_charging.limit.amount:
+                if imported_instant_charging < self.data.chargemode.instant_charging.limit.amount:
                     return instant_charging.current, "instant_charging", message
                 else:
                     return 0, "stop", self.INSTANT_CHARGING_AMOUNT_REACHED
@@ -756,7 +805,7 @@ class ChargeTemplate:
                            used_amount: float,
                            phases: int) -> float:
         if plan.limit.selected == "soc":
-            missing_amount = ((plan.limit.soc_scheduled - soc) / 100) * battery_capacity * 1000
+            missing_amount = ((plan.limit.soc_scheduled - soc) / 100) * battery_capacity
         else:
             missing_amount = plan.limit.amount - used_amount
         duration = missing_amount/(plan.current * phases*230)

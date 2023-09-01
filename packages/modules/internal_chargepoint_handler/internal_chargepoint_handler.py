@@ -5,6 +5,7 @@ import threading
 import time
 from typing import Optional
 from helpermodules import timecheck
+from helpermodules import pub
 
 from helpermodules.pub import Pub, pub_single
 from helpermodules.subdata import SubData
@@ -13,10 +14,9 @@ from modules.common.component_context import SingleComponentUpdateContext
 from modules.common.fault_state import ComponentInfo
 from modules.common.store._util import get_rounding_function_by_digits
 from modules.common.component_state import ChargepointState
-from modules.common.modbus import ModbusSerialClient_
 from modules.internal_chargepoint_handler import chargepoint_module
+from modules.internal_chargepoint_handler.clients import ClientHandler, client_factory
 from modules.internal_chargepoint_handler.socket import Socket
-from modules.internal_chargepoint_handler.chargepoint_module import ClientConfig
 from modules.internal_chargepoint_handler.internal_chargepoint_handler_config import (
     GlobalHandlerData, InternalChargepointHandlerData, RfidData)
 log = logging.getLogger(__name__)
@@ -25,8 +25,6 @@ try:
     import RPi.GPIO as GPIO
 except ImportError:
     log.info("failed to import RPi.GPIO! maybe we are not running on a pi")
-
-SOCKET_MAX_CURRENT: int = 16
 
 
 class UpdateValues:
@@ -38,17 +36,18 @@ class UpdateValues:
 
     def update_values(self, chargepoint_state: ChargepointState, heartbeat_expired: bool) -> None:
         if self.old_chargepoint_state:
-            # iterate over counterstate
+            # iterate over counter state
             vars_old_counter_state = vars(self.old_chargepoint_state)
             for key, value in vars(chargepoint_state).items():
-                if value != vars_old_counter_state[key]:
+                # Zählerstatus immer veröffentlichen für Ladelog-Einträge
+                if value != vars_old_counter_state[key] or key == "imported":
                     self._pub_values_to_2(key, value)
         else:
-            # Bei Neustart alles publishen
+            # Bei Neustart alles veröffentlichen
             for key, value in vars(chargepoint_state).items():
                 self._pub_values_to_2(key, value)
         if heartbeat_expired is False:
-            # Nur wenn eine Verbindung zum Master besteht, die gepublishden Werte speichern.
+            # Nur wenn eine Verbindung zum Master besteht, die veröffentlichten Werte speichern.
             self.old_chargepoint_state = chargepoint_state
 
     def _pub_values_to_2(self, topic: str, value) -> None:
@@ -71,7 +70,7 @@ class UpdateValues:
 
 class UpdateState:
     def __init__(self, cp_module: chargepoint_module.ChargepointModule) -> None:
-        self.old_phases_to_use = 3
+        self.old_phases_to_use = 0
         self.old_set_current = 0
         self.phase_switch_thread = None  # type: Optional[threading.Thread]
         self.cp_interruption_thread = None  # type: Optional[threading.Thread]
@@ -87,35 +86,38 @@ class UpdateState:
 
         if self.phase_switch_thread:
             if self.phase_switch_thread.is_alive():
-                log.debug("Thread zur Phasenumschaltung an LP"+str(self.cp_module.config.id) +
+                log.debug("Thread zur Phasenumschaltung an LP"+str(self.cp_module.local_charge_point_num) +
                           " noch aktiv. Es muss erst gewartet werden, bis die Phasenumschaltung abgeschlossen ist.")
                 return
         if self.cp_interruption_thread:
             if self.cp_interruption_thread.is_alive():
-                log.debug("Thread zur CP-Unterbrechung an LP"+str(self.cp_module.config.id) +
+                log.debug("Thread zur CP-Unterbrechung an LP"+str(self.cp_module.local_charge_point_num) +
                           " noch aktiv. Es muss erst gewartet werden, bis die CP-Unterbrechung abgeschlossen ist.")
                 return
         self.cp_module.set_current(set_current)
-        if self.old_phases_to_use != data.phases_to_use and data.phases_to_use != 0:
+        if data.trigger_phase_switch:
             log.debug("Switch Phases from "+str(self.old_phases_to_use) + " to " + str(data.phases_to_use))
             self.__thread_phase_switch(data.phases_to_use)
-            self.old_phases_to_use = data.phases_to_use
+            pub.pub_single("openWB/set/internal_chargepoint/0/data/trigger_phase_switch", False)
 
         if data.cp_interruption_duration > 0:
             self.__thread_cp_interruption(data.cp_interruption_duration)
 
     def __thread_phase_switch(self, phases_to_use: int) -> None:
         self.phase_switch_thread = threading.Thread(
-            target=self.cp_module.perform_phase_switch, args=(phases_to_use, 5))
+            target=self.cp_module.perform_phase_switch, args=(phases_to_use, 5),
+            name=f"perform phase switch {self.cp_module.local_charge_point_num}")
         self.phase_switch_thread.start()
-        log.debug("Thread zur Phasenumschaltung an LP"+str(self.cp_module.config.id)+" gestartet.")
+        log.debug("Thread zur Phasenumschaltung an LP"+str(self.cp_module.local_charge_point_num)+" gestartet.")
 
     def __thread_cp_interruption(self, duration: int) -> None:
         self.cp_interruption_thread = threading.Thread(
-            target=self.cp_module.perform_cp_interruption, args=(duration,))
+            target=self.cp_module.perform_cp_interruption, args=(duration,),
+            name=f"perform cp interruption cp{self.cp_module.local_charge_point_num}")
         self.cp_interruption_thread.start()
-        log.debug("Thread zur CP-Unterbrechung an LP"+str(self.cp_module.config.id)+" gestartet.")
-        Pub().pub(f"openWB/internal_chargepoint/{self.cp_module.config.id}/data/cp_interruption_duration", 0)
+        log.debug("Thread zur CP-Unterbrechung an LP"+str(self.cp_module.local_charge_point_num)+" gestartet.")
+        Pub().pub(
+            f"openWB/internal_chargepoint/{self.cp_module.local_charge_point_num}/data/cp_interruption_duration", 0)
 
 
 class InternalChargepointHandler:
@@ -130,16 +132,18 @@ class InternalChargepointHandler:
         self.event_start = event_start
         self.event_stop = event_stop
         self.heartbeat = False
-        with SingleComponentUpdateContext(ComponentInfo(parent_cp0, "Interner Ladepunkt 1", "vehicle",
+        with SingleComponentUpdateContext(ComponentInfo(parent_cp0, "Interner Ladepunkt 0", "vehicle",
                                                         parent_hostname=global_data.parent_ip)):
             # Allgemeine Fehlermeldungen an LP 1:
-            self.serial_client = ModbusSerialClient_(self.detect_modbus_usb_port())
-            self.cp0 = HandlerChargepoint(self.serial_client, 0, mode, global_data, parent_cp0)
+            self.cp0_client_handler = client_factory(0)
+            self.cp0 = HandlerChargepoint(self.cp0_client_handler, 0, mode, global_data, parent_cp0)
             if mode == InternalChargepointMode.DUO.value:
                 log.debug("Zweiter Ladepunkt für Duo konfiguriert.")
-                self.cp1 = HandlerChargepoint(self.serial_client, 1, mode, global_data, parent_cp1)
+                self.cp1_client_handler = client_factory(1, self.cp0_client_handler)
+                self.cp1 = HandlerChargepoint(self.cp1_client_handler, 1, mode, global_data, parent_cp1)
             else:
                 self.cp1 = None
+                self.cp1_client_handler = None
             self.init_gpio()
 
     def init_gpio(self) -> None:
@@ -157,37 +161,36 @@ class InternalChargepointHandler:
         GPIO.setup(19, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
     def loop(self) -> None:
+        def _loop():
+            while True:
+                self.heartbeat = True
+                if self.event_stop.is_set():
+                    break
+                log.debug("***Start***")
+                data = copy.deepcopy(SubData.internal_chargepoint_data)
+                log.debug(data)
+                log.setLevel(SubData.system_data["system"].data["debug_level"])
+                self.cp0.update(data["global_data"], data["cp0"], data["rfid_data"])
+                if self.cp1:
+                    self.cp1.update(data["global_data"], data["cp1"], data["rfid_data"])
+                time.sleep(1.1)
         with SingleComponentUpdateContext(self.cp0.module.component_info):
             # Allgemeine Fehlermeldungen an LP 1:
-            with self.serial_client:
-                while True:
-                    self.heartbeat = True
-                    if self.event_stop.is_set():
-                        break
-                    log.debug("***Start***")
-                    data = copy.deepcopy(SubData.internal_chargepoint_data)
-                    log.debug(data)
-                    log.setLevel(SubData.system_data["system"].data["debug_level"])
-                    self.cp0.update(data["global_data"], data["cp0"], data["rfid_data"])
-                    if self.cp1:
-                        self.cp1.update(data["global_data"], data["cp1"], data["rfid_data"])
-                    time.sleep(1.1)
-
-    def detect_modbus_usb_port(self) -> str:
-        """guess USB/modbus device name"""
-        known_devices = ("/dev/ttyUSB0", "/dev/ttyACM0", "/dev/serial0")
-        for device in known_devices:
-            try:
-                with open(device):
-                    return device
-            except FileNotFoundError:
-                pass
-        return known_devices[-1]  # this does not make sense, but is the same behavior as the old code
+            if self.cp1_client_handler is None:
+                with self.cp0_client_handler.client:
+                    _loop()
+            elif self.cp0_client_handler.client == self.cp1_client_handler.client:
+                with self.cp0_client_handler.client:
+                    _loop()
+            else:
+                with self.cp0_client_handler.client:
+                    with self.cp1_client_handler.client:
+                        _loop()
 
 
 class HandlerChargepoint:
     def __init__(self,
-                 serial_client: ModbusSerialClient_,
+                 client_handler: ClientHandler,
                  local_charge_point_num: int,
                  mode: InternalChargepointMode,
                  global_data: GlobalHandlerData,
@@ -195,14 +198,13 @@ class HandlerChargepoint:
         self.local_charge_point_num = local_charge_point_num
         if local_charge_point_num == 0:
             if mode == InternalChargepointMode.SOCKET.value:
-                self.module = Socket(SOCKET_MAX_CURRENT,
-                                     ClientConfig(0, serial_client), global_data.parent_ip)
+                self.module = Socket(local_charge_point_num, client_handler, global_data.parent_ip)
             else:
-                self.module = chargepoint_module.ChargepointModule(ClientConfig(
-                    0, serial_client), global_data.parent_ip)
+                self.module = chargepoint_module.ChargepointModule(
+                    local_charge_point_num, client_handler, global_data.parent_ip)
         else:
-            self.module = chargepoint_module.ChargepointModule(ClientConfig(
-                1, serial_client), global_data.parent_ip)
+            self.module = chargepoint_module.ChargepointModule(
+                local_charge_point_num, client_handler, global_data.parent_ip)
         with SingleComponentUpdateContext(self.module.component_info):
             self.update_values = UpdateValues(local_charge_point_num, global_data.parent_ip, parent_cp)
             self.update_state = UpdateState(self.module)
@@ -249,13 +251,9 @@ class GeneralInternalChargepointHandler:
                 # wait a moment to subscribe all data
                 time.sleep(2)
                 data = copy.deepcopy(SubData.internal_chargepoint_data)
-                cp_data = {}
-                for cp in SubData.cp_data:
-                    cp_data[cp] = copy.deepcopy(SubData.cp_data[cp].chargepoint)
-
-                for cp in cp_data.values():
-                    if cp.chargepoint_module.config.type == "internal_openwb":
-                        mode = cp.chargepoint_module.config.configuration.mode
+                for cp in SubData.cp_data.values():
+                    if cp.chargepoint.chargepoint_module.config.type == "internal_openwb":
+                        mode = cp.chargepoint.chargepoint_module.config.configuration.mode
 
                 try:
                     self.internal_chargepoint_handler = InternalChargepointHandler(

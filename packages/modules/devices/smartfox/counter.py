@@ -46,16 +46,17 @@ class SmartfoxCounter:
         # Version ermitteln
         self.root = ET.fromstring(response)
 
-        # Powerfaktor ist nach dem Firmwareupgrade auf EM2 00.01.03.06 (04-2021)
+        # Leistungsfaktor ist nach dem Firmwareupgrade auf EM2 00.01.03.06 (04-2021)
         # nicht mehr in der values.xml daher fix auf 1
 
         self.store.set(CounterState(
             imported=float((get_xml_text("energyValue"))[:-4]) * 1000,
             exported=float((get_xml_text("eToGridValue"))[:-4]) * 1000,
             power=float((get_xml_text("detailsPowerValue"))[:-2]),
-            powers=[float(get_xml_text(key)) for key in ["powerL1Value", "powerL2Value", "powerL3Value"]],
-            voltages=[float(get_xml_text(key)) for key in ["voltageL1Value", "voltageL2Value", "voltageL3Value"]],
-            currents=[float(get_xml_text(key)) for key in ["ampereL1Value", "ampereL2Value", "ampereL3Value"]]
+            powers=[float(get_xml_text(key)[:-2]) for key in ["powerL1Value", "powerL2Value", "powerL3Value"]],
+            voltages=[float(get_xml_text(key)[:-2]) for key in ["voltageL1Value", "voltageL2Value", "voltageL3Value"]],
+            currents=[float(get_xml_text(key)[:-2]) for key in ["ampereL1Value", "ampereL2Value", "ampereL3Value"]]
+
         ))
 
 

@@ -40,7 +40,7 @@ def collect_data(chargepoint):
             if log_data.imported_at_mode_switch == 0:
                 log_data.imported_at_mode_switch = chargepoint.data.get.imported
                 log.debug(f"imported_at_mode_switch {chargepoint.data.get.imported}")
-            # Bei einem Wechsel das Lademodus wird ein neuer Logeintrag erstellt.
+            # Bei einem Wechsel das Lademodus wird ein neuer Eintrag erstellt.
             if chargepoint.data.get.charge_state:
                 if log_data.timestamp_start_charging is None:
                     log_data.timestamp_start_charging = timecheck.create_timestamp()
@@ -52,7 +52,7 @@ def collect_data(chargepoint):
                 log.debug(f"imported_since_mode_switch {log_data.imported_since_mode_switch} "
                           f"counter {chargepoint.data.get.imported}")
                 log_data.range_charged = log_data.imported_since_mode_switch / \
-                    charging_ev.ev_template.data.average_consump/10
+                    charging_ev.ev_template.data.average_consump * 100
                 log_data.time_charged, _ = timecheck.get_difference_to_now(log_data.timestamp_start_charging)
             Pub().pub(f"openWB/set/chargepoint/{chargepoint.num}/set/log", asdict(log_data))
     except Exception:
@@ -89,7 +89,7 @@ def save_data(chargepoint, charging_ev, immediately: bool = True, reset: bool = 
         # Daten vor dem Speichern nochmal aktualisieren, auch wenn nicht mehr geladen wird.
         log_data.imported_since_plugged = chargepoint.data.get.imported - log_data.imported_at_plugtime
         log_data.imported_since_mode_switch = chargepoint.data.get.imported - log_data.imported_at_mode_switch
-        log_data.range_charged = log_data.imported_since_mode_switch / charging_ev.ev_template.data.average_consump/10
+        log_data.range_charged = log_data.imported_since_mode_switch / charging_ev.ev_template.data.average_consump*100
         log_data.time_charged, duration = timecheck.get_difference_to_now(log_data.timestamp_start_charging)
         power = 0
         if duration > 0:
@@ -143,7 +143,7 @@ def save_data(chargepoint, charging_ev, immediately: bool = True, reset: bool = 
         content.append(new_entry)
         with open(filepath, "w", encoding="utf-8") as json_file:
             json.dump(content, json_file)
-        log.debug(f"Neuer Ladelogeintrag: {new_entry}")
+        log.debug(f"Neuer Ladelog-Eintrag: {new_entry}")
 
         _reset_data_regarding_chargemode(chargepoint, reset)
         Pub().pub(f"openWB/set/chargepoint/{chargepoint.num}/set/log", asdict(log_data))

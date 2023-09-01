@@ -2,20 +2,23 @@
 """Starten der benötigten Prozesse
 """
 import logging
+from pathlib import Path
+from random import randrange
 import schedule
 import time
 import threading
 import traceback
 from threading import Thread
+from helpermodules.measurement_logging.update_daily_yields import update_daily_yields
+from helpermodules.measurement_logging.write_log import save_log
+from helpermodules.pub import Pub
 
 from modules import loadvars
 from modules import configuration
-from helpermodules import update_config
+from helpermodules import timecheck, update_config
 from helpermodules import subdata
 from helpermodules import setdata
-from helpermodules import measurement_log
 from helpermodules import logger
-from helpermodules.logger import cleanup_logfiles
 from helpermodules import command
 from control import prepare
 from control import data
@@ -25,6 +28,7 @@ from helpermodules.utils import exit_after
 from modules import update_soc
 from modules.internal_chargepoint_handler.internal_chargepoint_handler import GeneralInternalChargepointHandler
 from modules.internal_chargepoint_handler.rfid import RfidReader
+from smarthome.smarthome import readmq, smarthome_handler
 
 logger.setup_logging()
 log = logging.getLogger()
@@ -43,7 +47,6 @@ class HandlerAlgorithm:
             def handler_with_control_interval():
                 if (data.data.general_data.data.control_interval / 10) == self.interval_counter:
                     data.data.copy_data()
-                    log.setLevel(data.data.system_data["system"].data["debug_level"])
                     loadvars_.get_values()
                     data.data.copy_data()
                     self.heartbeat = True
@@ -61,6 +64,7 @@ class HandlerAlgorithm:
                 else:
                     self.interval_counter = self.interval_counter + 1
             log.info("# ***Start*** ")
+            Pub().pub("openWB/set/system/time", timecheck.create_timestamp_unix())
             handler_with_control_interval()
         except KeyboardInterrupt:
             log.critical("Ausführung durch exit_after gestoppt: "+traceback.format_exc())
@@ -73,9 +77,11 @@ class HandlerAlgorithm:
         ausführt, die nur alle 5 Minuten ausgeführt werden müssen.
         """
         try:
-            measurement_log.measurement_log_daily()
+            totals = save_log("daily")
+            update_daily_yields(totals)
             data.data.general_data.grid_protection()
             data.data.optional_data.et_get_prices()
+            data.data.counter_all_data.validate_hierarchy()
         except KeyboardInterrupt:
             log.critical("Ausführung durch exit_after gestoppt: "+traceback.format_exc())
         except Exception:
@@ -91,14 +97,14 @@ class HandlerAlgorithm:
             if not sub.heartbeat:
                 log.error("Heartbeat für Subdata nicht zurückgesetzt.")
                 sub.disconnect()
-                Thread(target=sub.sub_topics, args=()).start()
+                Thread(target=sub.sub_topics, args=(), name="Subdata").start()
             else:
                 sub.heartbeat = False
 
             if not set.heartbeat:
                 log.error("Heartbeat für Setdata nicht zurückgesetzt.")
                 set.disconnect()
-                Thread(target=set.set_data, args=()).start()
+                Thread(target=set.set_data, args=(), name="Setdata").start()
             else:
                 set.heartbeat = False
 
@@ -109,7 +115,6 @@ class HandlerAlgorithm:
                 else:
                     general_internal_chargepoint_handler.internal_chargepoint_handler.heartbeat = False
 
-            cleanup_logfiles()
             sub.system_data["system"].update_ip_address()
         except KeyboardInterrupt:
             log.critical("Ausführung durch exit_after gestoppt: "+traceback.format_exc())
@@ -119,7 +124,16 @@ class HandlerAlgorithm:
     @exit_after(10)
     def handler_midnight(self):
         try:
-            measurement_log.save_log("monthly")
+            save_log("monthly")
+        except KeyboardInterrupt:
+            log.critical("Ausführung durch exit_after gestoppt: "+traceback.format_exc())
+        except Exception:
+            log.exception("Fehler im Main-Modul")
+
+    @exit_after(10)
+    def handler_random_nightly(self):
+        try:
+            data.data.system_data["system"].create_backup_and_send_to_cloud()
         except KeyboardInterrupt:
             log.critical("Ausführung durch exit_after gestoppt: "+traceback.format_exc())
         except Exception:
@@ -128,10 +142,12 @@ class HandlerAlgorithm:
 
 def schedule_jobs():
     [schedule.every().minute.at(f":{i:02d}").do(handler.handler10Sec).tag("algorithm") for i in range(0, 60, 10)]
-    [schedule.every().minute.at(f":{i:02d}").do(soc.update).tag("algorithm") for i in range(0, 60, 10)]
+    [schedule.every().minute.at(f":{i:02d}").do(smarthome_handler).tag("algorithm") for i in range(0, 60, 5)]
     [schedule.every().hour.at(f":{i:02d}").do(handler.handler5Min) for i in range(0, 60, 5)]
-    [schedule.every().hour.at(f":{i:02d}").do(handler.handler5MinAlgorithm).tag("algorithm") for i in range(1, 60, 5)]
+    [schedule.every().hour.at(f":{i:02d}").do(handler.handler5MinAlgorithm).tag("algorithm") for i in range(0, 60, 5)]
     schedule.every().day.at("00:00:00").do(handler.handler_midnight).tag("algorithm")
+    schedule.every().day.at(f"0{randrange(0, 5)}:{randrange(0, 59):02d}:{randrange(0, 59):02d}").do(
+        handler.handler_random_nightly)
 
 
 try:
@@ -140,6 +156,12 @@ try:
     data.data_init(loadvars_.event_module_update_completed)
     update_config.UpdateConfig().update()
     configuration.pub_configurable()
+
+    # run as thread for logging reasons
+    t_smarthome = Thread(target=readmq, args=(), name="smarthome")
+    t_smarthome.start()
+    t_smarthome.join()
+
     proc = process.Process()
     control = algorithm.Algorithm()
     handler = HandlerAlgorithm()
@@ -157,18 +179,21 @@ try:
     event_scheduled_charging_plan.set()
     event_time_charging_plan = threading.Event()
     event_time_charging_plan.set()
+    event_soc = threading.Event()
+    event_soc.set()
     event_copy_data = threading.Event()  # set: Kopieren abgeschlossen, reset: es wird kopiert
     event_copy_data.set()
     event_global_data_initialized = threading.Event()
     event_command_completed = threading.Event()
     event_command_completed.set()
     event_subdata_initialized = threading.Event()
+    event_update_config_completed = threading.Event()
     event_jobs_running = threading.Event()
     event_jobs_running.set()
     prep = prepare.Prepare()
     soc = update_soc.UpdateSoc()
     set = setdata.SetData(event_ev_template, event_charge_template,
-                          event_cp_config, event_scheduled_charging_plan, event_time_charging_plan,
+                          event_cp_config, event_scheduled_charging_plan, event_time_charging_plan, event_soc,
                           event_subdata_initialized)
     sub = subdata.SubData(event_ev_template, event_charge_template,
                           event_cp_config, loadvars_.event_module_update_completed,
@@ -177,11 +202,14 @@ try:
                           event_scheduled_charging_plan, event_time_charging_plan,
                           general_internal_chargepoint_handler.event_start,
                           general_internal_chargepoint_handler.event_stop,
+                          event_update_config_completed,
+                          event_soc,
                           event_jobs_running)
     comm = command.Command(event_command_completed)
-    t_sub = Thread(target=sub.sub_topics, args=())
-    t_set = Thread(target=set.set_data, args=())
-    t_comm = Thread(target=comm.sub_commands, args=())
+    t_sub = Thread(target=sub.sub_topics, args=(), name="Subdata")
+    t_set = Thread(target=set.set_data, args=(), name="Setdata")
+    t_comm = Thread(target=comm.sub_commands, args=(), name="Commands")
+    t_soc = Thread(target=soc.update, args=(), name="SoC")
     t_internal_chargepoint = Thread(target=general_internal_chargepoint_handler.handler,
                                     args=(), name="Internal Chargepoint")
     if hasattr(rfid0, "input_device"):
@@ -194,9 +222,12 @@ try:
     t_sub.start()
     t_set.start()
     t_comm.start()
+    t_soc.start()
     t_internal_chargepoint.start()
     # Warten, damit subdata Zeit hat, alle Topics auf dem Broker zu empfangen.
-    time.sleep(5)
+    event_update_config_completed.wait(300)
+    Pub().pub("openWB/set/system/boot_done", True)
+    Path(Path(__file__).resolve().parents[1]/"ramdisk"/"bootdone").touch()
     schedule_jobs()
 except Exception:
     log.exception("Fehler im Main-Modul")

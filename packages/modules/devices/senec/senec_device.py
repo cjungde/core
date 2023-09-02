@@ -9,10 +9,12 @@ Tested with:
 - SENEC.Home V2.1
 
 Extended some of the read fields to enable the use with OpenWB V2
+2023-09-01 Updated Https and ssl cert (hubecker)
 
 Kudos:
 * based on the work of smashnet taken from https://gist.github.com/smashnet/82ad0b9d7f0ba2e5098e6649ba08f88a 
 * SYSTEM_STATE_NAME taken from https://github.com/mchwalisz/pysenec
+
 """
 
 import requests
@@ -34,12 +36,12 @@ class Senec_Connection():
 
     def __init__(self, device_ip):
         self.device_ip = device_ip
-        self.read_api  = f"http://{device_ip}/lala.cgi"
+        self.read_api  = f"https://{device_ip}/lala.cgi"
 
     def get_values(self, request_json = {}):
         if not request_json: request_json = BASIC_REQUEST
         try:
-            response = requests.post(self.read_api, json=request_json)
+            response = requests.post(self.read_api, json=request_json, verify=False)
             if response.status_code == 200:
                 res = self.__decode_data(response.json())
                 return self.__substitute_system_state(res)

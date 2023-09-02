@@ -33,7 +33,7 @@ def create_device(device_config: Senec):
         response=api.get_values()
         
         log.debug("Geraeteinformationen")
-        log.debug("Aktueller Status    : {0}".format(response["STATISTIC"]['CURRENT_STATE']))
+        #log.debug("Aktueller Status    : {0}".format(response["STATISTIC"]['CURRENT_STATE']))
         log.debug("Kapazitaet          : {0}".format(response["FACTORY"]['DESIGN_CAPACITY']))
         log.debug("Batterie - Laden/Entladen    : {0} W".format(round(response["ENERGY"]['GUI_BAT_DATA_POWER'],2)))
         log.debug("Power - Einspeisung / Bezug  : {0} W".format(round(response["ENERGY"]['GUI_GRID_POW'],2)))
@@ -61,11 +61,11 @@ def create_device(device_config: Senec):
         log.debug("Batterie - Fuellstand        : {0} %".format(round(response["ENERGY"]['GUI_BAT_DATA_FUEL_CHARGE'],2)))
         log.debug("Power - PV Leistung          : {0} W".format(round(response["ENERGY"]['GUI_INVERTER_POWER'],2)))
         
-        log.debug("Gesamtlademenge              : {0} Wh".format(round(response["STATISTIC"]['LIVE_BAT_CHARGE'],2)))
-        log.debug("Gesamtentlademenge           : {0} Wh".format(round(response["STATISTIC"]['LIVE_BAT_DISCHARGE'],2)))
-        log.debug("Gesamtimport                 : {0} Wh".format(round(response["STATISTIC"]['LIVE_GRID_IMPORT'],2)))
-        log.debug("Gesamteinspeisung            : {0} Wh".format(round(response["STATISTIC"]['LIVE_GRID_EXPORT'],2)))
-        log.debug("Gesamt PV Erzeugung (vom WR) : {0} Wh".format(round(response["STATISTIC"]['LIVE_PV_GEN'],2)))
+        #log.debug("Gesamtlademenge              : {0} Wh".format(round(response["STATISTIC"]['LIVE_BAT_CHARGE'],2)))
+        #log.debug("Gesamtentlademenge           : {0} Wh".format(round(response["STATISTIC"]['LIVE_BAT_DISCHARGE'],2)))
+        #log.debug("Gesamtimport                 : {0} Wh".format(round(response["STATISTIC"]['LIVE_GRID_IMPORT'],2)))
+        #log.debug("Gesamteinspeisung            : {0} Wh".format(round(response["STATISTIC"]['LIVE_GRID_EXPORT'],2)))
+        #log.debug("Gesamt PV Erzeugung (vom WR) : {0} Wh".format(round(response["STATISTIC"]['LIVE_PV_GEN'],2)))
                 
         for component in components:
             component.update(response)

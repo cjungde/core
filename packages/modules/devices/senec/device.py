@@ -34,7 +34,7 @@ def create_device(device_config: Senec):
         
         log.debug("Geraeteinformationen")
         #log.debug("Aktueller Status    : {0}".format(response["STATISTIC"]['CURRENT_STATE']))
-        log.debug("Kapazitaet          : {0}".format(response["FACTORY"]['DESIGN_CAPACITY']))
+        #log.debug("Kapazitaet          : {0}".format(response["FACTORY"]['DESIGN_CAPACITY']))
         log.debug("Batterie - Laden/Entladen    : {0} W".format(round(response["ENERGY"]['GUI_BAT_DATA_POWER'],2)))
         log.debug("Power - Einspeisung / Bezug  : {0} W".format(round(response["ENERGY"]['GUI_GRID_POW'],2)))
         log.debug("Power - Hausverbrauch        : {0} W".format(round(response["ENERGY"]['GUI_HOUSE_POW'],2)))
